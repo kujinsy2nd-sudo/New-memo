@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>価格メモ（PWA版）</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; background:#f7f7f7; margin:0; padding:16px; }
+    h1 { font-size:20px; margin-bottom:12px; }
+    h2 { font-size:16px; margin:0; }
+    .card { display:flex; flex-direction:column; justify-content:flex-start; background:#fff; border-radius:12px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
+    .header { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+    .content { margin-top:8px; }
+    .hidden { display:none; }
+    button { padding:6px 10px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; margin-right:4px; margin-top:4px; }
+    button.secondary { background:#e5e7eb; color:#111; }
+    input, select { width:100%; padding:6px; margin-bottom:6px; border-radius:6px; border:1px solid #ddd; font-size:12px; }
+    .price { font-weight:bold; margin-bottom:4px; }
+    .small { font-size:12px; color:#555; }
+    #products { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:12px; }
+    .add-card { padding:2px; margin-bottom:6px; }
+    .add-card h2 { margin:2px 0; font-size:13px; }
+    .compact { padding:1px !important; }
+    .compact input, .compact button { padding:4px !important; font-size:11px; margin-bottom:4px; }
+    .compact h2 { font-size:12px; margin:0 0 4px 0; }
+  </style>
+</head>
+<body>
+<h1>価格メモ（PWA版）</h1>
+
+<div class="card add-card">
+  <h2>商品を追加</h2>
+  <input id="productName" placeholder="商品名（例：牛乳）" />
+  <button onclick="addProduct()">追加</button>
+</div>
+
+<div id="products"></div>
+
+<template id="priceFormTemplate">
+  <div class="card compact">
+    <select class="shopSelect"></select>
+    <input class="priceInput" placeholder="値段" type="number" />
+    <button class="savePrice">保存</button>
+    <button class="secondary cancelPrice">キャンセル</button>
+  </div>
+</template>
+
+<script>
+const STORAGE_KEY = 'price_memo_app_v3';
+let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { products: [], shops: [] };
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  render();
+}
+
+function addProduct() {
+  const input = document.getElementById('productName');
+  const name = input.value.trim();
+  if (!name) { alert('商品名を入力してください'); return; }
+  data.products.push({ id: Date.now(), name, prices: [] });
+  input.value = '';
+  save();
+}
+
+function editProduct(productId) {
+  const product = data.products.find(p => p.id === productId);
+  const newName = prompt('商品名を変更', product.name);
+  if (!newName) return;
+  product.name = newName.trim();
+  save();
+}
+
+function deleteProduct(productId) {
+  if (!confirm('この商品を削除しますか？')) return;
+  data.products = data.products.filter(p => p.id !== productId);
+  save();
+}
+
+function addPrice(productId) {
+  const product = data.products.find(p => p.id === productId);
+  const container = document.getElementById('products');
+
+  const tpl = document.getElementById('priceFormTemplate');
+  const form = tpl.content.cloneNode(true);
+  const card = form.querySelector('.card');
+  const select = form.querySelector('.shopSelect');
+  const priceInput = form.querySelector('.priceInput');
+  const saveBtn = form.querySelector('.savePrice');
+  const cancelBtn = form.querySelector('.cancelPrice');
+
+  const emptyOpt = document.createElement('option');
+  emptyOpt.value = '';
+  emptyOpt.textContent = '店名を選択';
+  select.appendChild(emptyOpt);
+
+  data.shops.forEach(shop => {
+    const opt = document.createElement('option');
+    opt.value = shop;
+    opt.textContent = shop;
+    select.appendChild(opt);
+  });
+
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__';
+  newOpt.textContent = '＋ 新しい店名';
+  select.appendChild(newOpt);
+
+  select.onchange = () => {
+    if (select.value === '__new__') {
+      const name = prompt('新しい店名');
+      if (name) {
+        data.shops.push(name);
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.insertBefore(opt, newOpt);
+        select.value = name;
+      } else {
+        select.value = '';
+      }
+    }
+  };
+
+  saveBtn.onclick = () => {
+    if (!select.value || !priceInput.value) return;
+    product.prices.push({
+      id: Date.now(),
+      shop: select.value,
+      price: Number(priceInput.value),
+      date: new Date().toLocaleDateString()
+    });
+    save();
+  };
+
+  cancelBtn.onclick = () => save();
+
+  container.prepend(card);
+}
+
+function editPriceOnly(productId, priceId) {
+  const product = data.products.find(p => p.id === productId);
+  const item = product.prices.find(p => p.id === priceId);
+  const priceStr = prompt('値段を変更', item.price);
+  const price = Number(priceStr);
+  if (!priceStr || isNaN(price)) return;
+  item.price = price;
+  save();
+}
+
+function deletePrice(productId, priceId) {
+  if (!confirm('この価格を削除しますか？')) return;
+  const product = data.products.find(p => p.id === productId);
+  product.prices = product.prices.filter(p => p.id !== priceId);
+  save();
+}
+
+function sortPrices(productId, order) {
+  const product = data.products.find(p => p.id === productId);
+  product.prices.sort((a, b) => order === 'asc' ? a.price - b.price : b.price - a.price);
+  save();
+}
+
+function render() {
+  const container = document.getElementById('products');
+  container.innerHTML = '';
+
+  data.products.forEach(product => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const prices = product.prices.map(p => p.price);
+    const min = prices.length ? Math.min(...prices) : null;
+    const max = prices.length ? Math.max(...prices) : null;
+
+    const header = document.createElement('div');
+    header.className = 'header';
+    header.innerHTML = `<h2>${product.name}</h2><span>▼</span>`;
+
+    const content = document.createElement('div');
+    content.className = 'content';
+
+    header.onclick = () => {
+      content.classList.toggle('hidden');
+      header.querySelector('span').textContent = content.classList.contains('hidden') ? '▶' : '▼';
+    };
+
+    content.innerHTML = `
+      ${min !== null ? `<div class="price">最安値：${min}円</div>` : '<div class="small">まだ価格なし</div>'}
+      <button class="secondary" onclick="editProduct(${product.id})">商品名変更</button>
+      <button class="secondary" onclick="deleteProduct(${product.id})">商品削除</button>
+      <div class="small">価格履歴</div>
+      <button class="secondary" onclick="sortPrices(${product.id}, 'asc')">安い順</button>
+      <button class="secondary" onclick="sortPrices(${product.id}, 'desc')">高い順</button>
+      ${product.prices.map(p => {
+        let bg = '';
+        if (p.price === min) bg = 'background:#dcfce7;';
+        if (p.price === max) bg = 'background:#fee2e2;';
+        return `
+        <div class="small" style="padding:4px; border-radius:6px; ${bg}">
+          ${p.shop}：${p.price}円（${p.date}）
+          <button class="secondary" onclick="editPriceOnly(${product.id}, ${p.id})">値段変更</button>
+          <button class="secondary" onclick="deletePrice(${product.id}, ${p.id})">削除</button>
+        </div>`;
+      }).join('')}
+      <br />
+      <button onclick="addPrice(${product.id})">価格を追加</button>
+    `;
+    card.appendChild(header);
+    card.appendChild(content);
+    container.appendChild(card);
+  });
+}
+
+render();
+
+// PWA用 Service Worker 登録
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js');
+}
+</script>
+</body>
+</html>
